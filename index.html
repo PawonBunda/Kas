@@ -440,6 +440,13 @@
         let filteredTransactions = [];
         let webAppUrl = localStorage.getItem('uangku_webapp_url') || '';
         let isChangingPin = false;
+
+        // ===============================
+        // SESSION & AUTO LOCK
+        // ===============================
+        const IDLE_TIMEOUT = 15 * 60 * 1000;
+        let idleTimer = null;
+        let isAppUnlocked = false;
         let barChartInstance = null;
         let pieChartInstance = null;
 
@@ -525,44 +532,113 @@
             const authSubtitle = document.getElementById('authSubtitle');
             const authBtn = document.getElementById('authSubmitBtn');
             const authIcon = document.getElementById('authIcon');
+
             const storedUrl = localStorage.getItem('uangku_webapp_url');
+            const storedPin = localStorage.getItem('uangku_app_pin');
+
+            // ==========================================
+            // CEK SESSION
+            // ==========================================
+            const sessionActive = sessionStorage.getItem('uangku_session');
+
+            // Kalau session masih aktif, langsung buka aplikasi
+            if (sessionActive === 'active' && storedPin) {
+                isAppUnlocked = true;
+
+                document.getElementById('authOverlay').style.display = 'none';
+                document.getElementById('authOverlay').classList.add(
+                    'opacity-0',
+                    'pointer-events-none'
+                );
+
+                document.getElementById('appContainer').classList.remove('hidden');
+
+                updateConnectionUI(!!storedUrl);
+
+                startIdleTimer();
+
+                // Ambil data terbaru dari Google Sheets
+                fetchFromGoogleSheets();
+
+                return;
+            }
+
+            // ==========================================
+            // TIDAK ADA SESSION
+            // ==========================================
+            isAppUnlocked = false;
 
             if (storedUrl) {
                 webAppUrl = storedUrl;
-                document.getElementById('webAppUrlInput').value = storedUrl;
+
+                const urlInput = document.getElementById('webAppUrlInput');
+                if (urlInput) {
+                    urlInput.value = storedUrl;
+                }
+
                 try {
-                    const res = await fetch(`${webAppUrl}?action=getConfig`);
+                    const res = await fetch(
+                        `${webAppUrl}?action=getConfig`
+                    );
+
                     const data = await res.json();
 
                     if (!data.hasPin) {
                         authTitle.textContent = 'Buat PIN Cloud Baru';
-                        authSubtitle.textContent = 'PIN & URL akan disimpan aman di sheet "Config" Cloud.';
-                        authBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Simpan PIN ke Cloud`;
-                        authIcon.className = 'fa-solid fa-shield-halved';
-                        return;
+                        authSubtitle.textContent =
+                            'PIN & URL akan disimpan di Cloud.';
+                        authBtn.innerHTML =
+                            `<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Simpan PIN ke Cloud`;
+                        authIcon.className =
+                            'fa-solid fa-shield-halved';
+
                     } else {
                         authTitle.textContent = 'Masukkan PIN Cloud';
-                        authSubtitle.textContent = 'Terhubung ke Google Sheets Cloud.';
-                        authBtn.innerHTML = `<i class="fa-solid fa-key mr-1.5"></i> Buka Akses`;
-                        authIcon.className = 'fa-solid fa-user-lock';
-                        return;
+                        authSubtitle.textContent =
+                            'Masukkan PIN untuk membuka aplikasi.';
+                        authBtn.innerHTML =
+                            `<i class="fa-solid fa-key mr-1.5"></i> Buka Akses`;
+                        authIcon.className =
+                            'fa-solid fa-user-lock';
                     }
-                } catch (err) {
-                    console.error('Gagal mengecek status config dari cloud:', err);
-                }
-            }
 
-            const localPin = localStorage.getItem('uangku_app_pin');
-            if (!localPin && !storedUrl) {
+                } catch (err) {
+                    console.error(
+                        'Gagal mengecek config cloud:',
+                        err
+                    );
+
+                    // Kalau cloud gagal, tetap gunakan PIN lokal
+                    authTitle.textContent = 'Masukkan PIN Akses';
+                    authSubtitle.textContent =
+                        'Masukkan PIN untuk membuka aplikasi.';
+                    authBtn.innerHTML =
+                        `<i class="fa-solid fa-key mr-1.5"></i> Buka Akses`;
+                    authIcon.className =
+                        'fa-solid fa-user-lock';
+                }
+
+            } else if (!storedPin) {
+
+                // Belum punya PIN
                 authTitle.textContent = 'Buat PIN Akses Baru';
-                authSubtitle.textContent = 'Atau hubungkan URL Cloud di bawah agar otomatis tersinkron.';
-                authBtn.innerHTML = `<i class="fa-solid fa-floppy-disk mr-1.5"></i> Simpan PIN Lokal`;
-                authIcon.className = 'fa-solid fa-shield-halved';
+                authSubtitle.textContent =
+                    'Buat PIN untuk mengamankan aplikasi.';
+                authBtn.innerHTML =
+                    `<i class="fa-solid fa-floppy-disk mr-1.5"></i> Simpan PIN Lokal`;
+                authIcon.className =
+                    'fa-solid fa-shield-halved';
+
             } else {
+
+                // Sudah punya PIN tetapi session sudah habis
                 authTitle.textContent = 'Masukkan PIN Akses';
-                authSubtitle.textContent = 'Aplikasi terkunci. Masukkan PIN untuk membuka data.';
-                authBtn.innerHTML = `<i class="fa-solid fa-key mr-1.5"></i> Buka Akses`;
-                authIcon.className = 'fa-solid fa-user-lock';
+                authSubtitle.textContent =
+                    'Aplikasi terkunci. Masukkan PIN untuk membuka.';
+                authBtn.innerHTML =
+                    `<i class="fa-solid fa-key mr-1.5"></i> Buka Akses`;
+                authIcon.className =
+                    'fa-solid fa-user-lock';
             }
         }
 
@@ -642,23 +718,134 @@
         }
 
         function unlockAppUI() {
-            document.getElementById('authOverlay').classList.add('opacity-0', 'pointer-events-none');
+
+            // Tandai session aktif
+            sessionStorage.setItem(
+                'uangku_session',
+                'active'
+            );
+
+            isAppUnlocked = true;
+
+            // Reset timer idle
+            resetIdleTimer();
+
+            const overlay =
+                document.getElementById('authOverlay');
+
+            const app =
+                document.getElementById('appContainer');
+
+            overlay.classList.add(
+                'opacity-0',
+                'pointer-events-none'
+            );
+
             setTimeout(() => {
-                document.getElementById('authOverlay').style.display = 'none';
-                document.getElementById('appContainer').classList.remove('hidden');
+
+                overlay.style.display = 'none';
+
+                app.classList.remove('hidden');
+
                 document.getElementById('pinInput').value = '';
-                updateConnectionUI(true);
+
+                updateConnectionUI(!!webAppUrl);
+
                 fetchFromGoogleSheets();
+
             }, 300);
         }
 
-        function lockApp() {
-            document.getElementById('appContainer').classList.add('hidden');
-            const overlay = document.getElementById('authOverlay');
+        // ==========================================
+        // AUTO LOCK KARENA TIDAK ADA AKTIVITAS
+        // ==========================================
+
+        function startIdleTimer() {
+            resetIdleTimer();
+
+            const activityEvents = [
+                'mousemove',
+                'mousedown',
+                'keydown',
+                'touchstart',
+                'scroll',
+                'click'
+            ];
+
+            activityEvents.forEach(event => {
+                document.addEventListener(
+                    event,
+                    resetIdleTimer,
+                    { passive: true }
+                );
+            });
+        }
+
+
+        function resetIdleTimer() {
+
+            if (!isAppUnlocked) return;
+
+            clearTimeout(idleTimer);
+
+            idleTimer = setTimeout(() => {
+
+                console.log(
+                    'Tidak ada aktivitas. Aplikasi dikunci otomatis.'
+                );
+
+                lockApp(true);
+
+            }, IDLE_TIMEOUT);
+        }
+
+        function lockApp(autoLock = false) {
+
+            // Hentikan status session
+            sessionStorage.removeItem(
+                'uangku_session'
+            );
+
+            isAppUnlocked = false;
+
+            clearTimeout(idleTimer);
+
+            document
+                .getElementById('appContainer')
+                .classList.add('hidden');
+
+            const overlay =
+                document.getElementById('authOverlay');
+
             overlay.style.display = 'flex';
-            setTimeout(() => overlay.classList.remove('opacity-0', 'pointer-events-none'), 10);
+
+            setTimeout(() => {
+
+                overlay.classList.remove(
+                    'opacity-0',
+                    'pointer-events-none'
+                );
+
+            }, 10);
+
+            // Tampilkan pesan berbeda
+            if (autoLock) {
+
+                document.getElementById('authTitle').textContent =
+                    'Aplikasi Dikunci';
+
+                document.getElementById('authSubtitle').textContent =
+                    'Tidak ada aktivitas selama 30 menit. Masukkan PIN untuk melanjutkan.';
+
+            }
+
             checkAuthStatus();
-            document.getElementById('pinInput').focus();
+
+            setTimeout(() => {
+                document
+                    .getElementById('pinInput')
+                    .focus();
+            }, 100);
         }
 
         function openChangePinModal() {
@@ -734,17 +921,97 @@
         }
 
         async function postToGoogleSheets(payload) {
-            if (!webAppUrl) return;
-            try {
-                await fetch(webAppUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-            } catch (err) {
-                console.error('Gagal mengirim data ke cloud:', err);
+
+            if (!webAppUrl) {
+
+                console.error(
+                    'Web App URL belum tersedia.'
+                );
+
+                return {
+                    result: 'error',
+                    message: 'Web App URL belum tersedia'
+                };
+
             }
+
+
+            try {
+
+                const response =
+                    await fetch(webAppUrl, {
+
+                        method: 'POST',
+
+                        headers: {
+                            'Content-Type':
+                                'text/plain;charset=utf-8'
+                        },
+
+                        body: JSON.stringify(payload)
+
+                    });
+
+
+                const text =
+                    await response.text();
+
+
+                console.log(
+                    'Response Google Sheets:',
+                    text
+                );
+
+
+                if (!text) {
+
+                    return {
+                        result: 'error',
+                        message: 'Response kosong'
+                    };
+
+                }
+
+
+                try {
+
+                    return JSON.parse(text);
+
+                } catch (parseError) {
+
+                    console.error(
+                        'Response bukan JSON:',
+                        text
+                    );
+
+                    return {
+                        result: 'error',
+                        message:
+                            'Response Google Sheets tidak valid',
+                        raw: text
+                    };
+
+                }
+
+
+            } catch (err) {
+
+                console.error(
+                    'Gagal mengirim data ke Google Sheets:',
+                    err
+                );
+
+
+                return {
+
+                    result: 'error',
+
+                    message: err.message
+
+                };
+
+            }
+
         }
 
         function loadLocalTransactions() {
@@ -815,137 +1082,159 @@
         async function handleFormSubmit(e) {
     e.preventDefault();
 
-    const submitBtn = document.getElementById('submitBtn');
-    const originalBtnText = submitBtn.innerHTML;
+    const id =
+        document.getElementById('transactionId').value ||
+        'TRX-' + Date.now();
 
-    try {
-        // Ambil data dari form
-        const id = document.getElementById('transactionId').value || 'TRX-' + Date.now();
-        const type = document.querySelector('input[name="type"]:checked').value;
-        const amount = Number(document.getElementById('amountInput').value);
-        const category = document.getElementById('categoryInput').value;
-        const date = document.getElementById('dateInput').value;
-        const description = document.getElementById('descriptionInput').value.trim();
+    const type =
+        document.querySelector(
+            'input[name="type"]:checked'
+        ).value;
 
-        // Validasi
-        if (!amount || amount <= 0) {
-            showToast('Jumlah transaksi tidak valid!', 'error');
-            return;
-        }
-
-        if (!category) {
-            showToast('Kategori wajib dipilih!', 'error');
-            return;
-        }
-
-        if (!date) {
-            showToast('Tanggal wajib diisi!', 'error');
-            return;
-        }
-
-        if (!description) {
-            showToast('Keterangan wajib diisi!', 'error');
-            return;
-        }
-
-        // Data transaksi
-        const newTx = {
-            id: id,
-            date: date,
-            type: type,
-            category: category,
-            amount: amount,
-            description: description
-        };
-
-        // Cek apakah transaksi sudah ada
-        const existingIndex = transactions.findIndex(t => t.id === id);
-
-        // Disable tombol sementara
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `
-            <i class="fa-solid fa-spinner fa-spin mr-1.5"></i>
-            ${existingIndex >= 0 ? 'Memperbarui...' : 'Menyimpan...'}
-        `;
-
-        // ==========================================
-        // MODE EDIT
-        // ==========================================
-        if (existingIndex >= 0) {
-
-            // Update data lokal terlebih dahulu
-            transactions[existingIndex] = newTx;
-
-            // Simpan ke localStorage
-            saveLocalTransactions();
-
-            // Kirim perubahan ke Google Sheets
-            if (webAppUrl) {
-                await postToGoogleSheets({
-                    action: 'update',
-                    id: newTx.id,
-                    date: newTx.date,
-                    type: newTx.type,
-                    category: newTx.category,
-                    amount: newTx.amount,
-                    description: newTx.description
-                });
-            }
-
-            showToast('Transaksi berhasil diperbarui!', 'success');
-
-        } 
-        // ==========================================
-        // MODE TAMBAH
-        // ==========================================
-        else {
-
-            // Tambahkan ke paling atas
-            transactions.unshift(newTx);
-
-            // Simpan ke localStorage
-            saveLocalTransactions();
-
-            // Kirim ke Google Sheets
-            if (webAppUrl) {
-                await postToGoogleSheets({
-                    action: 'add',
-                    id: newTx.id,
-                    date: newTx.date,
-                    type: newTx.type,
-                    category: newTx.category,
-                    amount: newTx.amount,
-                    description: newTx.description
-                });
-            }
-
-            showToast('Transaksi berhasil ditambahkan!', 'success');
-        }
-
-        // Update kategori
-        populateCategoryFilter();
-
-        // Refresh tampilan
-        applyFilters();
-
-        // Tutup modal
-        closeModal();
-
-    } catch (err) {
-
-        console.error('Gagal menyimpan transaksi:', err);
-
-        showToast(
-            'Terjadi kesalahan saat menyimpan transaksi.',
-            'error'
+    const amount =
+        Number(
+            document.getElementById('amountInput').value
         );
 
-    } finally {
+    const category =
+        document.getElementById('categoryInput').value;
 
-        // Aktifkan kembali tombol
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = originalBtnText;
+    const date =
+        document.getElementById('dateInput').value;
+
+    const description =
+        document.getElementById('descriptionInput')
+            .value
+            .trim();
+
+
+    const existingIndex =
+        transactions.findIndex(
+            t => t.id.toString() === id.toString()
+        );
+
+
+    const newTx = {
+        id: id,
+        date: date,
+        type: type,
+        category: category,
+        amount: amount,
+        description: description
+    };
+
+
+    // ========================================================
+    // EDIT
+    // ========================================================
+    if (existingIndex >= 0) {
+
+        // Simpan perubahan ke array lokal
+        transactions[existingIndex] = newTx;
+
+        // Simpan ke localStorage
+        saveLocalTransactions();
+
+        // Tampilkan perubahan di layar
+        applyFilters();
+
+
+        // Kirim UPDATE ke Google Sheets
+        const result =
+            await postToGoogleSheets({
+                action: 'update',
+                id: id,
+                date: date,
+                type: type,
+                category: category,
+                amount: amount,
+                description: description
+            });
+
+
+        console.log(
+            'Hasil update Google Sheets:',
+            result
+        );
+
+
+        if (
+            result &&
+            result.result === 'success'
+        ) {
+
+            showToast(
+                'Transaksi berhasil diperbarui di Google Sheets!',
+                'success'
+            );
+
+        } else {
+
+            showToast(
+                'Data lokal berubah, tetapi update Google Sheets gagal.',
+                'error'
+            );
+
+        }
+
     }
+
+
+    // ========================================================
+    // TAMBAH
+    // ========================================================
+    else {
+
+        transactions.unshift(newTx);
+
+        saveLocalTransactions();
+
+        applyFilters();
+
+
+        const result =
+            await postToGoogleSheets({
+                action: 'add',
+                id: id,
+                date: date,
+                type: type,
+                category: category,
+                amount: amount,
+                description: description
+            });
+
+
+        console.log(
+            'Hasil tambah Google Sheets:',
+            result
+        );
+
+
+        if (
+            result &&
+            result.result === 'success'
+        ) {
+
+            showToast(
+                'Transaksi berhasil ditambahkan!',
+                'success'
+            );
+
+        } else {
+
+            showToast(
+                'Data lokal tersimpan, tetapi gagal dikirim ke Google Sheets.',
+                'error'
+            );
+
+        }
+
+    }
+
+
+    closeModal();
+
+    applyFilters();
 }
 
         async function deleteTransaction(id) {
