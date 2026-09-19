@@ -426,7 +426,8 @@
                     <label for="amountInput" class="block text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Jumlah (Rp)</label>
                     <div class="relative">
                         <span class="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-sm">Rp</span>
-                        <input type="number" id="amountInput" required min="1" step="1" placeholder="0" class="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-semibold text-base sm:text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <!-- Ubah type="number" menjadi type="text" dan tambahkan oninput -->
+                        <input type="text" id="amountInput" required placeholder="0" oninput="formatInputRupiah(this)" class="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-semibold text-base sm:text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
                     </div>
                 </div>
 
@@ -491,6 +492,19 @@
 
     <!-- JavaScript Application Logic -->
     <script>
+
+        function formatInputRupiah(input) {
+            // Hanya ambil angka, buang karakter selain digit
+            let value = input.value.replace(/[^0-9]/g, '');
+            
+            // Format angka dengan pemisah titik
+            if (value) {
+                value = Number(value).toLocaleString('id-ID');
+            }
+            
+            input.value = value;
+        }
+
         const CATEGORIES = {
             pemasukan: ['Gaji', 'Bonus', 'Investasi', 'Penjualan', 'Lain-lain'],
             pengeluaran: ['Makanan & Minuman', 'Transportasi', 'Belanja', 'Tagihan & Utilitas', 'Hiburan', 'Kesehatan', 'Pendidikan', 'Lain-lain']
@@ -1117,7 +1131,7 @@
                     document.getElementById('transactionId').value = tx.id;
                     document.querySelector(`input[name="type"][value="${tx.type}"]`).checked = true;
                     onTypeChange(tx.type);
-                    document.getElementById('amountInput').value = tx.amount;
+                    document.getElementById('amountInput').value = Number(tx.amount).toLocaleString('id-ID');
                     document.getElementById('categoryInput').value = tx.category;
                     document.getElementById('dateInput').value = tx.date;
                     document.getElementById('descriptionInput').value = tx.description;
@@ -1160,10 +1174,9 @@
                     'input[name="type"]:checked'
                 ).value;
 
-            const amount =
-                Number(
-                    document.getElementById('amountInput').value
-                );
+            // Menghilangkan semua titik (.) sebelum diubah menjadi tipe Number
+            const rawAmount = document.getElementById('amountInput').value.replace(/\./g, '');
+            const amount = Number(rawAmount);
 
             const category =
                 document.getElementById('categoryInput').value;
