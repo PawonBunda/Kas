@@ -2,6 +2,7 @@
 <html lang="id" class="light">
 <head>
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icone.png">
     <meta name="theme-color" content="#10B981">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1687,6 +1688,14 @@
             a.click();
             URL.revokeObjectURL(url);
             showToast('Data berhasil diekspor ke CSV', 'success');
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((reg) => console.log('Service Worker terdaftar dengan sukses:', reg.scope))
+                    .catch((err) => console.error('Pendaftaran Service Worker gagal:', err));
+            });
         }
     </script>
 </body>
